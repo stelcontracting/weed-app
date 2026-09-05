@@ -113,22 +113,37 @@ function base(s,   u,p,n,w){
 '
 
 # --- 1. products ------------------------------------------------------------
-say "== 2/7  herbicides =="
+say "== 2/7  products =="
+grep -v '^#' "$HERE/product-types.txt" | grep '|' > "$WORK/types.tsv"
+say "  product types wanted: $(wc -l < "$WORK/types.tsv" | tr -d ' ')"
+
 # product.csv: pcode,prodtype,psched,regdate,fdesc,typedesc,hlevel1,fpname,sname,regcode,expdate,scode1
+# Only current registrations (regcode R) in the agricultural category (typedesc
+# starts "A"), so veterinary products can never leak in.
 awk -F'","' "$AWKLIB"'
-NR==1 { next }
+FILENAME ~ /types\.tsv$/ {
+  line = $0
+  p1 = index(line, "|"); if (p1 == 0) next
+  rest = substr(line, p1 + 1)
+  p2 = index(rest, "|"); if (p2 == 0) next
+  t = trim(substr(line, 1, p1 - 1))
+  grp[t] = trim(substr(rest, 1, p2 - 1))
+  lbl[t] = trim(substr(rest, p2 + 1))
+  next
+}
+FNR==1 { next }
 {
-  hl = clean($7); rc = clean($10)
-  if (hl != "HERBICIDE" || rc != "R") next
-  pcode = clean($1)
-  printf "%s\t%s\t%s\t%s\t%s\n", pcode, clean($8), clean($9), clean($5), clean($11)
-}' "$CACHE/product.csv" | sort -t"$(printf '\t')" -k1,1 > "$WORK/herbicides.tsv"
+  hl = clean($7); rc = clean($10); ty = clean($6)
+  if (rc != "R" || ty !~ /^A/ || !(hl in grp)) next
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", clean($1), clean($8), clean($9), clean($5), clean($11), lbl[hl], grp[hl]
+}' "$WORK/types.tsv" "$CACHE/product.csv" | sort -t"$(printf '\t')" -k1,1 > "$WORK/products.tsv"
 
-NPROD=$(wc -l < "$WORK/herbicides.tsv" | tr -d ' ')
-say "  registered herbicides: $NPROD"
-[ "$NPROD" -gt 3000 ] || die "only $NPROD herbicides — PubCRIS schema may have changed"
+NPROD=$(wc -l < "$WORK/products.tsv" | tr -d ' ')
+say "  products in scope: $NPROD"
+[ "$NPROD" -gt 6000 ] || die "only $NPROD products — PubCRIS schema or product-types.txt may have changed"
+awk -F'\t' '{c[$6]++} END{for(k in c) printf "    %5d  %s\n", c[k], k}' "$WORK/products.tsv" | sort -rn >&2
 
-cut -f1 "$WORK/herbicides.tsv" > "$WORK/pcodes.txt"
+cut -f1 "$WORK/products.tsv" > "$WORK/pcodes.txt"
 
 # actives: prodcon (pcode,ccode,ctype,camount,cucode) joined to constit (ccode,cname,clevel1)
 awk -F'","' "$AWKLIB"'
@@ -153,47 +168,106 @@ FNR==1 { next }
   printf "%s\t%s\n", p, clean($2) }' "$WORK/pcodes.txt" "$CACHE/statereg.csv" \
   | sort -u > "$WORK/states.tsv"
 
-# --- 2. weeds ---------------------------------------------------------------
-say "== 3/7  weed vocabulary =="
-# Which pest codes do herbicides actually target?
+# --- 2. targets -------------------------------------------------------------
+say "== 3/7  target vocabulary =="
+# Which pest codes do the products in scope actually target?
 awk -F'","' "$AWKLIB"'
 FILENAME ~ /pcodes/ { keep[$1]=1; next }
 FNR==1 { next }
 { p = clean($1); if (p in keep) print clean($3) }' \
   "$WORK/pcodes.txt" "$CACHE/produse.csv" | sort -u > "$WORK/pestcodes.txt"
 
-say "  pest codes targeted by herbicides: $(wc -l < "$WORK/pestcodes.txt" | tr -d ' ')"
+say "  pest codes in use: $(wc -l < "$WORK/pestcodes.txt" | tr -d ' ')"
 
-# Real weeds are overwhelmingly Z*. The rest is a mix of genuine entries and
-# label boilerplate ("REFER TO LABEL", "PASTURE TOPPING", "CONTROL ROOT GROWTH").
-# Keep Z*, drop anything that reads as an instruction rather than a plant.
+# Not every code follows the prefix convention — Navua sedge is "NAVSE", giant
+# rats tail is "ZGGR". For the stragglers, infer the kind from what sort of
+# product targets them: if only herbicides list it, it is a weed.
+awk "$AWKLIB"'
+BEGIN { FS="\t" }
+FILENAME ~ /products\.tsv$/ {
+  t = $6; k = ""
+  if (t == "Herbicide") k = "weed"
+  else if (t == "Insecticide" || t == "Miticide" || t == "Nematicide" || t == "Snail & slug") k = "insect"
+  else if (t == "Fungicide" || t == "Bactericide" || t == "Algicide") k = "disease"
+  if (k != "") pk[$1] = k
+  next
+}
+{
+  n = split($0, f, "\",\"")
+  if (n < 3) next
+  p = clean(f[1]); w = clean(f[3])
+  if (p in pk) cnt[w SUBSEP pk[p]]++
+}
+END {
+  for (key in cnt) {
+    split(key, a, SUBSEP)
+    if (cnt[key] > best[a[1]]) { best[a[1]] = cnt[key]; kind[a[1]] = a[2] }
+  }
+  for (w in kind) print w "\t" kind[w]
+}' "$WORK/products.tsv" "$CACHE/produse.csv" | sort > "$WORK/kindhint.tsv"
+
+say "  kind inferred from product type for: $(wc -l < "$WORK/kindhint.tsv" | tr -d ' ') codes"
+
+# PubCRIS codes the target by prefix, which is undocumented but completely
+# consistent once you look at the names:
+#   Z  weeds          W,I  insects        Y  diseases
+#   U  mites AND vertebrate pests (split by name)
+#   X  crop-growth effects            V  veterinary — never wanted here
+# Everything else is label boilerplate ("REFER TO LABEL", "OPTIMISE SPRAY WATER
+# PH") and is dropped. Vertebrates are dropped too: you do not spray a fox.
 awk -F'","' "$AWKLIB"'
 FILENAME ~ /pestcodes/ { want[$1]=1; next }
+FILENAME ~ /kindhint/ { split($0, kh, "\t"); hint[kh[1]] = kh[2]; next }
 FNR==1 { next }
 {
   c = clean($1); if (!(c in want)) next
   d = clean($2); if (d == "") next
-  u = toupper(d)
+  u = toupper(d); f = substr(c, 1, 1)
+
   if (u ~ /^(REFER|SEE |CONTROL OF|OPTIMISE|PASTURE TOPPING|SPRAY |FOAM|SOFTENS|REDUCE FOAM|LONG-TERM)/) next
   if (u ~ /REFER TO|SEE LABEL|NOT SPECIFIED|MISCELLANEOUS|AS APPROVED FOR OTHER/) next
-  if (substr(c,1,1) != "Z" && length(c) < 3) next
-  print c "\t" d
-}' "$WORK/pestcodes.txt" "$CACHE/pest.csv" | sort -u > "$WORK/weeds.tsv"
+  if (f == "V") next
 
-NWEED=$(wc -l < "$WORK/weeds.tsv" | tr -d ' ')
-say "  weeds kept: $NWEED"
-[ "$NWEED" -gt 1500 ] || die "only $NWEED weeds — filter is too aggressive"
+  # Three signals, strongest first. The prefix convention alone gets this wrong
+  # ~2% of the time — "YORKSHIRE FOG", "WILD OATS" and "WHITE CLOVER" are weeds
+  # that merely start with Y and W — so it is the LAST resort, not the first.
+  kind = ""
+  if (f == "X") kind = "growth"
 
-cut -f1 "$WORK/weeds.tsv" > "$WORK/weedcodes.txt"
+  # 1. the name itself. Word boundaries matter: \<ANT\> must not match
+  #    ANTHRACNOSE, \<ROT\> must not match CARROT.
+  else if (u ~ /\<(APHID|APHIDS|MITE|MITES|MOTH|MOTHS|BEETLE|BEETLES|WEEVIL|WEEVILS|THRIP|THRIPS|CATERPILLAR|CATERPILLARS|BORER|BORERS|SCALE|GRUB|GRUBS|ANT|ANTS|LOCUST|LOCUSTS|HOPPER|HOPPERS|LEAFHOPPER|MEALYBUG|MEALYBUGS|WHITEFLY|PSYLLID|PSYLLIDS|NEMATODE|NEMATODES|EELWORM|SNAIL|SNAILS|SLUG|SLUGS|EARWIG|EARWIGS|SLATER|SLATERS|MILLIPEDE|MILLIPEDES|SPRINGTAIL|MAGGOT|MAGGOTS|BLOWFLY|WIREWORM|CUTWORM|ARMYWORM|ARMYWORMS|BUDWORM|WEBWORM|LOOPER|WEBSPINNING|TICK|TICKS|LARVAE|LARVA)\>/) kind = "insect"
+  else if (u ~ /\<(BLIGHT|ROT|ROTS|MILDEW|RUST|WILT|CANKER|ANTHRACNOSE|SCAB|SMUT|DAMPING|MOULD|MOLD|VIRUS|BACTERIAL|FUNGUS|FUNGI|DIEBACK|NECROSIS|MOSAIC|PHYTOPHTHORA|SCLEROTINIA|BOTRYTIS|FUSARIUM|RHIZOCTONIA|PYTHIUM|ALTERNARIA)\>/) kind = "disease"
+
+  # 2. what sort of product actually targets it — 97.9% agreement with the
+  #    prefix, and right in nearly every case where the two differ.
+  else if (c in hint) kind = hint[c]
+
+  # 3. the prefix convention, for codes nothing else reached
+  else if (f == "Z") kind = "weed"
+  else if (f == "W" || f == "I") kind = "insect"
+  else if (f == "Y") kind = "disease"
+  else if (f == "U") next          # fox, rodent, rabbit — you do not spray those
+  else next
+
+  print c "\t" d "\t" kind
+}' "$WORK/pestcodes.txt" "$WORK/kindhint.tsv" "$CACHE/pest.csv" | sort -u > "$WORK/targets.tsv"
+
+NTARGET=$(wc -l < "$WORK/targets.tsv" | tr -d ' ')
+say "  targets kept: $NTARGET"
+awk -F'\t' '{c[$3]++} END{for(k in c) printf "    %5d  %s\n", c[k], k}' "$WORK/targets.tsv" | sort -rn >&2
+[ "$NTARGET" -gt 3000 ] || die "only $NTARGET targets — the classifier is too aggressive"
+
+cut -f1 "$WORK/targets.tsv" > "$WORK/targetcodes.txt"
 
 awk -F'","' "$AWKLIB"'
-FILENAME ~ /weedcodes/ { want[$1]=1; next }
+FILENAME ~ /targetcodes/ { want[$1]=1; next }
 FNR==1 { next }
 { c = clean($1); if (!(c in want)) next
   a = clean($2); if (a == "") next
-  print c "\t" a }' "$WORK/weedcodes.txt" "$CACHE/pest_alias.csv" | sort -u > "$WORK/weed_alias.tsv"
+  print c "\t" a }' "$WORK/targetcodes.txt" "$CACHE/pest_alias.csv" | sort -u > "$WORK/target_alias.tsv"
 
-say "  weed aliases: $(wc -l < "$WORK/weed_alias.tsv" | tr -d ' ')"
+say "  target aliases: $(wc -l < "$WORK/target_alias.tsv" | tr -d ' ')"
 
 # --- 3. situations ----------------------------------------------------------
 say "== 4/7  situation groups =="
@@ -228,12 +302,12 @@ say "  unmatched -> other: $(awk -F'\t' -v n="$NGRP" '$3==n' "$WORK/hosts.tsv" |
 
 # --- 4. the big join --------------------------------------------------------
 say "== 5/7  joining produse (this is the slow one) =="
-# produse -> weedIdx, groupIdx, productIdx  and  weedIdx, productIdx, hostIdx
+# produse -> targetIdx, groupIdx, productIdx  and  targetIdx, productIdx, hostIdx
 awk "$AWKLIB"'
 BEGIN { FS="\t" }
-FILENAME ~ /herbicides\.tsv$/ { pidx[$1] = np++; next }
-FILENAME ~ /weeds\.tsv$/      { widx[$1] = nw++; next }
-FILENAME ~ /hosts\.tsv$/      { hidx[$1] = nh++; hgrp[$1] = $3; next }
+FILENAME ~ /products\.tsv$/ { pidx[$1] = np++; next }
+FILENAME ~ /targets\.tsv$/  { widx[$1] = nw++; next }
+FILENAME ~ /hosts\.tsv$/    { hidx[$1] = nh++; hgrp[$1] = $3; next }
 {
   # produse.csv, re-split on the quoted-CSV separator
   n = split($0, f, "\",\"")
@@ -244,18 +318,23 @@ FILENAME ~ /hosts\.tsv$/      { hidx[$1] = nh++; hgrp[$1] = $3; next }
   print wi "\t" pi "\t" hi > DETAIL
   ng = split(hgrp[h], g, ",")
   for (i = 1; i <= ng; i++) print wi "\t" g[i] "\t" pi > IDX
+  # what this product is registered on, regardless of target — this is what
+  # makes "photograph the crop, see what is registered on it" possible
+  print hi "\t" pi > BYHOST
 }
 END { printf "  matched triples: %d\n", NR > "/dev/stderr" }
-' DETAIL="$WORK/detail.raw" IDX="$WORK/idx.raw" \
-  "$WORK/herbicides.tsv" "$WORK/weeds.tsv" "$WORK/hosts.tsv" "$CACHE/produse.csv"
+' DETAIL="$WORK/detail.raw" IDX="$WORK/idx.raw" BYHOST="$WORK/byhost.raw" \
+  "$WORK/products.tsv" "$WORK/targets.tsv" "$WORK/hosts.tsv" "$CACHE/produse.csv"
 
 # NUMERIC sort on all three columns. A plain sort -u orders these lexically
 # (2 after 10), which makes the delta encoding below go negative and emit
 # garbage indices. Contiguity per weed/group is what lets the emitters stream.
 sort -u -t"$(printf '\t')" -k1,1n -k2,2n -k3,3n "$WORK/idx.raw"    -o "$WORK/idx.tsv"
 sort -u -t"$(printf '\t')" -k1,1n -k2,2n -k3,3n "$WORK/detail.raw" -o "$WORK/detail.tsv"
-say "  index rows (weed x group x product): $(wc -l < "$WORK/idx.tsv" | tr -d ' ')"
-say "  detail rows (weed x product x host): $(wc -l < "$WORK/detail.tsv" | tr -d ' ')"
+sort -u -t"$(printf '\t')" -k1,1n -k2,2n            "$WORK/byhost.raw" -o "$WORK/byhost.tsv"
+say "  index rows (target x group x product): $(wc -l < "$WORK/idx.tsv" | tr -d ' ')"
+say "  detail rows (target x product x host): $(wc -l < "$WORK/detail.tsv" | tr -d ' ')"
+say "  by-host rows (host x product):         $(wc -l < "$WORK/byhost.tsv" | tr -d ' ')"
 
 # --- 5. crosswalk -----------------------------------------------------------
 say "== 6/7  scientific-name crosswalk =="
@@ -269,8 +348,8 @@ say "== 6/7  scientific-name crosswalk =="
       if (s !~ /^(SEEDLING|SUPPRESSION|PRE |POST |SEED|REFER|SEE |CONTROL|EARLY|LATE)/)
         print tolower(s) "\t" $1 "\tauto"
     }
-  }' "$WORK/weeds.tsv"
-  awk -F'\t' '$2 ~ /^[A-Z][a-z]+ [a-z]+$/ { print tolower($2) "\t" $1 "\tauto" }' "$WORK/weed_alias.tsv"
+  }' "$WORK/targets.tsv"
+  awk -F'\t' '$2 ~ /^[A-Z][a-z]+ [a-z]+$/ { print tolower($2) "\t" $1 "\tauto" }' "$WORK/target_alias.tsv"
   grep -v '^#' "$HERE/crosswalk-manual.txt" 2>/dev/null | grep '|' | awk -F'[ \t]*\\|[ \t]*' \
     '{ if ($1!="" && $2!="") print tolower($1) "\t" $2 "\tmanual" }'
 } | awk -F'\t' '!seen[$1"\t"$2]++' | sort > "$WORK/crosswalk.tsv"
@@ -288,22 +367,24 @@ FILENAME ~ /actives\.tsv$/ {
 }
 FILENAME ~ /states\.tsv$/ { st[$1] = st[$1] (st[$1]?",":"") "\"" $2 "\""; next }
 {
-  printf "%s[\"%s\",\"%s\",\"%s\",\"%s\",[%s],[%s],\"%s\"]", (n++?",\n":"\n"),
+  # pcode, name, company, formulation, actives, states, expiry, type, typegroup
+  printf "%s[\"%s\",\"%s\",\"%s\",\"%s\",[%s],[%s],\"%s\",\"%s\",\"%s\"]", (n++?",\n":"\n"),
     jesc($1), jesc(title($2)), jesc(title($3)), jesc(title($4)),
-    ($1 in a ? a[$1] : ""), ($1 in st ? st[$1] : ""), jesc(substr($5,1,10))
+    ($1 in a ? a[$1] : ""), ($1 in st ? st[$1] : ""), jesc(substr($5,1,10)),
+    jesc($6), jesc($7)
 }
-END { print "\n]}" }' "$WORK/actives.tsv" "$WORK/states.tsv" "$WORK/herbicides.tsv" > "$OUT/products.json"
+END { print "\n]}" }' "$WORK/actives.tsv" "$WORK/states.tsv" "$WORK/products.tsv" > "$OUT/products.json"
 
-# weeds.json
+# targets.json — weeds, insects and diseases in one list, each tagged with kind
 awk "$AWKLIB"'
-BEGIN { FS="\t"; print "{\"v\":1,\"weeds\":[" }
-FILENAME ~ /weed_alias\.tsv$/ { al[$1] = al[$1] (al[$1]?",":"") "\"" jesc(title($2)) "\""; next }
-FILENAME ~ /crosswalk\.tsv$/  { sc[$2] = sc[$2] (sc[$2]?",":"") "\"" jesc($1) "\""; next }
+BEGIN { FS="\t"; print "{\"v\":2,\"targets\":[" }
+FILENAME ~ /target_alias\.tsv$/ { al[$1] = al[$1] (al[$1]?",":"") "\"" jesc(title($2)) "\""; next }
+FILENAME ~ /crosswalk\.tsv$/    { sc[$2] = sc[$2] (sc[$2]?",":"") "\"" jesc($1) "\""; next }
 {
-  printf "%s[\"%s\",\"%s\",[%s],[%s]]", (n++?",\n":"\n"),
-    jesc($1), jesc(title($2)), ($1 in al ? al[$1] : ""), ($1 in sc ? sc[$1] : "")
+  printf "%s[\"%s\",\"%s\",[%s],[%s],\"%s\"]", (n++?",\n":"\n"),
+    jesc($1), jesc(title($2)), ($1 in al ? al[$1] : ""), ($1 in sc ? sc[$1] : ""), jesc($3)
 }
-END { print "\n]}" }' "$WORK/weed_alias.tsv" "$WORK/crosswalk.tsv" "$WORK/weeds.tsv" > "$OUT/weeds.json"
+END { print "\n]}" }' "$WORK/target_alias.tsv" "$WORK/crosswalk.tsv" "$WORK/targets.tsv" > "$OUT/targets.json"
 
 # situations.json — file-defined groups plus the catch-all
 awk -F'[ \t]*\\|[ \t]*' '
@@ -323,11 +404,15 @@ BEGIN { FS="\t"; print "{\"v\":1,\"idx\":{" }
 function b36(x,  s,d){ if(x<0){ print "FATAL: negative delta — input is not numerically sorted" > "/dev/stderr"; exit 1 }
   if(x==0) return "0"; s=""
   while(x>0){ d=x%36; s=substr("0123456789abcdefghijklmnopqrstuvwxyz",d+1,1) s; x=int(x/36) } return s }
-function flushg(){ if(cg!="") { gout = gout (gout?",":"") "\"" cg "\":\"" plist "\""; plist=""; prev=0 } }
-function flushw(){ flushg(); if(cw!="") { printf "%s\"%s\":{%s}", (n++?",\n":"\n"), cw, gout; gout="" } }
+# NOTE: guard on explicit flags, never on cw!="". Index 0 arrives as the strnum
+# "0", and awk compares a strnum against a string constant NUMERICALLY, so
+# ("0" != "") is FALSE and the flush silently never fires — which shows up much
+# later as a negative delta.
+function flushg(){ if(haveg) { gout = gout (gout?",":"") "\"" cg "\":\"" plist "\""; plist=""; prev=0; haveg=0 } }
+function flushw(){ flushg(); if(havew) { printf "%s\"%s\":{%s}", (n++?",\n":"\n"), cw, gout; gout=""; havew=0 } }
 {
-  if ($1 != cw) { flushw(); cw=$1; cg="" }
-  if ($2 != cg) { flushg(); cg=$2 }
+  if (!havew || $1 != cw) { flushw(); cw=$1; havew=1 }
+  if (!haveg || $2 != cg) { flushg(); cg=$2; haveg=1 }
   plist = plist (plist?",":"") b36($3 - prev); prev = $3
 }
 END { flushw(); print "\n}}" }' "$WORK/idx.tsv" > "$OUT/index.json"
@@ -338,25 +423,42 @@ BEGIN { FS="\t"; print "{\"v\":1,\"detail\":{" }
 function b36(x,  s,d){ if(x<0){ print "FATAL: negative delta — input is not numerically sorted" > "/dev/stderr"; exit 1 }
   if(x==0) return "0"; s=""
   while(x>0){ d=x%36; s=substr("0123456789abcdefghijklmnopqrstuvwxyz",d+1,1) s; x=int(x/36) } return s }
-function flushp(){ if(cp!="") { pout = pout (pout?",":"") "\"" cp "\":\"" hlist "\""; hlist=""; prev=0 } }
-function flushw(){ flushp(); if(cw!="") { printf "%s\"%s\":{%s}", (n++?",\n":"\n"), cw, pout; pout="" } }
+function flushp(){ if(havep) { pout = pout (pout?",":"") "\"" cp "\":\"" hlist "\""; hlist=""; prev=0; havep=0 } }
+function flushw(){ flushp(); if(havew) { printf "%s\"%s\":{%s}", (n++?",\n":"\n"), cw, pout; pout=""; havew=0 } }
 {
-  if ($1 != cw) { flushw(); cw=$1; cp="" }
-  if ($2 != cp) { flushp(); cp=$2 }
+  if (!havew || $1 != cw) { flushw(); cw=$1; havew=1 }
+  if (!havep || $2 != cp) { flushp(); cp=$2; havep=1 }
   hlist = hlist (hlist?",":"") b36($3 - prev); prev = $3
 }
 END { flushw(); print "\n}}" }' "$WORK/detail.tsv" > "$OUT/detail.json"
+
+# byhost.json — host -> every product registered on it, whatever the target.
+# This is what answers "I am standing in a macadamia block, what can I use here".
+awk "$AWKLIB"'
+BEGIN { FS="\t"; print "{\"v\":1,\"byhost\":{" }
+function b36(x,  s,d){ if(x<0){ print "FATAL: negative delta — input is not numerically sorted" > "/dev/stderr"; exit 1 }
+  if(x==0) return "0"; s=""
+  while(x>0){ d=x%36; s=substr("0123456789abcdefghijklmnopqrstuvwxyz",d+1,1) s; x=int(x/36) } return s }
+function flushh(){ if(haveh) { printf "%s\"%s\":\"%s\"", (n++?",\n":"\n"), ch, plist; plist=""; prev=0; haveh=0 } }
+{
+  if (!haveh || $1 != ch) { flushh(); ch=$1; haveh=1 }
+  plist = plist (plist?",":"") b36($2 - prev); prev = $2
+}
+END { flushh(); print "\n}}" }' "$WORK/byhost.tsv" > "$OUT/byhost.json"
 
 # meta.json
 STAMP=$(date -u +%Y-%m-%d)
 cat > "$OUT/meta.json" <<META
 {
-  "v": 1,
+  "v": 2,
   "built": "$STAMP",
   "source": "APVMA PubCRIS open dataset (data.gov.au), CC BY 3.0 AU",
   "counts": {
     "products": $NPROD,
-    "weeds": $NWEED,
+    "targets": $NTARGET,
+    "weeds": $(awk -F'\t' '$3=="weed"' "$WORK/targets.tsv" | wc -l | tr -d ' '),
+    "insects": $(awk -F'\t' '$3=="insect"' "$WORK/targets.tsv" | wc -l | tr -d ' '),
+    "diseases": $(awk -F'\t' '$3=="disease"' "$WORK/targets.tsv" | wc -l | tr -d ' '),
     "hosts": $(wc -l < "$WORK/hosts.tsv" | tr -d ' '),
     "index": $(wc -l < "$WORK/idx.tsv" | tr -d ' '),
     "detail": $(wc -l < "$WORK/detail.tsv" | tr -d ' ')
@@ -380,15 +482,20 @@ say "== validating =="
 MAXP=$(cut -f3 "$WORK/idx.tsv" | sort -n | tail -1)
 MAXH=$(cut -f3 "$WORK/detail.tsv" | sort -n | tail -1)
 MAXW=$(cut -f1 "$WORK/idx.tsv" | sort -n | tail -1)
+MAXBP=$(cut -f2 "$WORK/byhost.tsv" | sort -n | tail -1)
+MAXBH=$(cut -f1 "$WORK/byhost.tsv" | sort -n | tail -1)
 NHOST=$(wc -l < "$WORK/hosts.tsv" | tr -d ' ')
-say "  max product id $MAXP (of $NPROD)   max weed id $MAXW (of $NWEED)   max host id $MAXH (of $NHOST)"
+say "  max product id $MAXP (of $NPROD)   max target id $MAXW (of $NTARGET)   max host id $MAXH (of $NHOST)"
+say "  byhost: max product $MAXBP, max host $MAXBH"
 [ "$MAXP" -lt "$NPROD" ] || die "index references product $MAXP but only $NPROD exist"
-[ "$MAXW" -lt "$NWEED" ] || die "index references weed $MAXW but only $NWEED exist"
+[ "$MAXW" -lt "$NTARGET" ] || die "index references target $MAXW but only $NTARGET exist"
+[ "$MAXBP" -lt "$NPROD" ] || die "byhost references product $MAXBP but only $NPROD exist"
+[ "$MAXBH" -lt "$NHOST" ] || die "byhost references host $MAXBH but only $NHOST exist"
 [ "$MAXH" -lt "$NHOST" ] || die "detail references host $MAXH but only $NHOST exist"
 grep -q '""' "$OUT/index.json" && die "index.json contains an empty delta list"
 say "  ok"
 
-CORE=$(cat "$OUT/weeds.json" "$OUT/products.json" "$OUT/index.json" "$OUT/situations.json" | gzip -c | wc -c | tr -d ' ')
+CORE=$(cat "$OUT/targets.json" "$OUT/products.json" "$OUT/index.json" "$OUT/situations.json" | gzip -c | wc -c | tr -d ' ')
 say ""
 say "  offline core (weeds+products+index+situations): $CORE bytes gzipped"
 say "done."

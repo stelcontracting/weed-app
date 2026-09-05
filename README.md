@@ -1,8 +1,9 @@
 # STEL Weed ID
 
-Photograph a weed, find every herbicide registered for it in Australia, open the
-approved APVMA label. Installs to a phone or tablet home screen and the weed
-search works with no signal.
+Photograph a weed, or search any weed, insect or disease, and find every
+agricultural chemical registered for it in Australia — then open the approved
+APVMA label. Installs to a phone or tablet home screen and the search works
+with no signal.
 
 Live at **https://stelcontracting.github.io/weed-app/**
 
@@ -10,13 +11,15 @@ Live at **https://stelcontracting.github.io/weed-app/**
 
 - **Identify from a photo** — Pl@ntNet returns candidate species with confidence
   scores; you confirm which one is right. It never picks silently.
-- **Search a weed by name** — works fully offline. This is the part that carries
-  the value in a paddock.
-- **See what is registered** — herbicides for that weed, narrowed to the
+- **Search by name** — weeds, insects, mites or diseases, filtered by kind.
+  Works fully offline. This is the part that carries the value in a paddock.
+- **See what is registered** — products for that target, narrowed to the
   situation you are in (pasture, fenceline, roadside, forestry, non-crop…),
-  grouped by active constituent so modes of action can be rotated.
+  grouped by base active constituent so modes of action can be rotated.
 - **Open the label** — the official APVMA approved label PDF for that product.
 - **Look up a product** — what is this drum in the shed actually for.
+- **Browse by crop or situation** — everything registered for use in a
+  macadamia block or a pasture, whatever it targets.
 
 ## What it deliberately does not do
 
@@ -26,7 +29,7 @@ and whether aerial or drone application is permitted are all on the label, which
 is one tap away and is the legal document.
 
 It also does not claim a product is suitable for drone application. Flagging that
-would mean reading the text of all 3,661 labels — a worthwhile next step, but not
+would mean reading the text of all 7,781 labels — a worthwhile next step, but not
 something to guess at.
 
 ## Data
@@ -36,8 +39,10 @@ dataset](https://www.data.gov.au/data/dataset/apvma-pubcris-dataset-for-register
 (CC BY 3.0 AU, refreshed weekly). Label PDFs are served by APVMA at
 `elabels.apvma.gov.au/{APVMA number}ELBL.pdf`.
 
-Current extract: 3,661 registered herbicides, 2,059 weeds, 800,117
-weed × situation × product combinations. The offline core is about 745 KB gzipped.
+Current extract: 7,781 registered products (3,661 herbicides, 1,637 insecticides,
+1,228 fungicides, plus miticides, adjuvants, wetters and growth regulators),
+3,831 targets (2,008 weeds, 957 insects and mites, 752 diseases) and 877,804
+target × situation × product combinations. The offline core is about 1.1 MB gzipped.
 
 ## Rebuilding the data
 
@@ -57,7 +62,12 @@ with `BUILD_DIR=/some/path`.
 The build validates itself: it fails if the index references a product, weed or
 host that does not exist, or if the delta encoding goes negative.
 
-## Two files you can edit without touching code
+## Three files you can edit without touching code
+
+- **`product-types.txt`** — which PubCRIS product types are in scope. PubCRIS
+  also holds pool chlorine, dairy cleanser and cattle drench; this file picks out
+  what a spray contractor could put in a tank. Each line is
+  `PUBCRIS TYPE | group | Short label`.
 
 - **`situation-groups.txt`** — collapses PubCRIS's 2,502 host codes into the ~20
   situations that appear as chips in the app. Each line is
@@ -74,7 +84,7 @@ under Setup → "Species with no APVMA match". Those are the ones worth adding.
 
 ## Shipping an update
 
-Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v2`), commit, push.
+Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v3`), commit, push.
 The service worker is network-first for the page, so phones pick up the change
 next time they have signal. No reinstalling.
 

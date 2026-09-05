@@ -4,7 +4,7 @@
    can be looked up and its product list read standing in a paddock with no
    bars. Label PDFs are not cached here: elabels.apvma.gov.au sends no CORS
    headers, so they open in the browser and the browser caches them. */
-var CACHE = "stel-weed-v2";
+var CACHE = "stel-weed-v3";
 var FILES = [
   "./",
   "./index.html",
@@ -13,7 +13,8 @@ var FILES = [
   "./icon-192.png",
   "./icon-512.png",
   "./icon-maskable.png",
-  "./data/weeds.json",
+  "./data/targets.json",
+  "./data/byhost.json",
   "./data/products.json",
   "./data/situations.json",
   "./data/index.json",

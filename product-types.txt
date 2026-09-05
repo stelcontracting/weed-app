@@ -1,0 +1,38 @@
+# Product types to include
+#
+# PubCRIS holds every registered agvet product — pool chlorine, dairy cleanser,
+# cattle drench, wood preservative. This file picks out the ones a spray
+# contractor could actually put in a tank on agricultural land.
+#
+# Format:  PUBCRIS TYPE | group | Short label shown in the app
+#
+# "group" drives the filter chips:
+#   pest   — kills or controls something
+#   tank   — goes in the tank with something else
+#   growth — changes how the plant grows
+#
+# Only products whose registration is current (regcode R) and whose category is
+# agricultural (typedesc starting "A") are considered, so veterinary products
+# never appear regardless of what is listed here.
+#
+# Add or remove a line and re-run build-data.sh. Nothing in the code needs to
+# change — the app reads the labels from here.
+
+HERBICIDE                 | pest   | Herbicide
+INSECTICIDE               | pest   | Insecticide
+FUNGICIDE                 | pest   | Fungicide
+MITICIDE                  | pest   | Miticide
+NEMATICIDE                | pest   | Nematicide
+MOLLUSCICIDE              | pest   | Snail & slug
+ALGICIDE                  | pest   | Algicide
+BACTERICIDE               | pest   | Bactericide
+MIXED FUNCTION PESTICIDE  | pest   | Mixed pesticide
+MIXED FUNCTION SEED TREAT | pest   | Seed treatment
+
+ADJUVANT                  | tank   | Adjuvant
+WETTING AGENT             | tank   | Wetter
+SURFACTANT                | tank   | Surfactant
+MARKER                    | tank   | Spray marker
+
+PLANT REGULATOR           | growth | Plant regulator
+GROWTH REGULATOR          | growth | Growth regulator

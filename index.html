@@ -24,6 +24,8 @@
   --rule:#D3D8C8; --rule-hard:#B9C0AC;
   --accent:#54781A; --accent-ink:#FFFFFF; --accent-soft:#E9F0D7; --accent-edge:#B7CE7E;
   --warn:#9A5410; --warn-soft:#FAEDDC; --warn-edge:#E0B37C;
+  --kind-insect:#8A5A1B; --kind-insect-edge:#D9B57E;
+  --kind-disease:#6A4A8A; --kind-disease-edge:#BDA8D4;
   --shadow:0 1px 2px rgba(26,30,23,.05), 0 6px 18px -10px rgba(26,30,23,.22);
   --radius:3px;
 }
@@ -34,6 +36,8 @@
     --rule:#2C3222; --rule-hard:#3E462F;
     --accent:#A6C64C; --accent-ink:#11140D; --accent-soft:#222B12; --accent-edge:#4C5B26;
     --warn:#E39B45; --warn-soft:#2E2010; --warn-edge:#5E441F;
+    --kind-insect:#D9A055; --kind-insect-edge:#6B4A20;
+    --kind-disease:#B79BD6; --kind-disease-edge:#4A3A61;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px -10px rgba(0,0,0,.7);
   }
 }
@@ -43,6 +47,8 @@
   --rule:#2C3222; --rule-hard:#3E462F;
   --accent:#A6C64C; --accent-ink:#11140D; --accent-soft:#222B12; --accent-edge:#4C5B26;
   --warn:#E39B45; --warn-soft:#2E2010; --warn-edge:#5E441F;
+  --kind-insect:#D9A055; --kind-insect-edge:#6B4A20;
+  --kind-disease:#B79BD6; --kind-disease-edge:#4A3A61;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px -10px rgba(0,0,0,.7);
 }
 
@@ -172,6 +178,14 @@ input::placeholder{color:var(--ink-faint)}
   border:1px solid var(--rule-hard);border-radius:2px;padding:1px 5px;color:var(--ink-faint)}
 .tag.qld{color:var(--accent);border-color:var(--accent-edge);background:var(--accent-soft)}
 .tag.expired{color:var(--warn);border-color:var(--warn-edge);background:var(--warn-soft)}
+/* what you are trying to kill, and what sort of product does it */
+.tag.kind-weed{color:var(--accent);border-color:var(--accent-edge)}
+.tag.kind-insect{color:var(--kind-insect);border-color:var(--kind-insect-edge)}
+.tag.kind-disease{color:var(--kind-disease);border-color:var(--kind-disease-edge)}
+.tag.kind-growth{color:var(--ink-soft)}
+.tag.type-pest{color:var(--ink-soft);border-color:var(--rule-hard);background:var(--sunk)}
+.tag.type-tank{color:var(--kind-insect);border-color:var(--kind-insect-edge)}
+.tag.type-growth{color:var(--kind-disease);border-color:var(--kind-disease-edge)}
 
 /* ─────────── identify ─────────── */
 .cands{display:flex;flex-direction:column;gap:0}
@@ -301,14 +315,14 @@ function getJSON(url){
 
 function loadCore(){
   return Promise.all([
-    getJSON("./data/weeds.json"),
+    getJSON("./data/targets.json"),
     getJSON("./data/products.json"),
     getJSON("./data/situations.json"),
     getJSON("./data/index.json"),
     getJSON("./data/meta.json")
   ]).then(function(r){
     DATA = {
-      weeds: r[0].weeds,
+      targets: r[0].targets,
       products: r[1].products,
       groups: r[2].groups,
       idx: r[3].idx,
@@ -317,16 +331,18 @@ function loadCore(){
     buildSciIndex();
     var m = DATA.meta;
     document.getElementById("footMeta").textContent =
-      m.counts.products.toLocaleString() + " herbicides · " +
-      m.counts.weeds.toLocaleString() + " weeds · PubCRIS extract " + m.built;
+      m.counts.products.toLocaleString() + " products · " +
+      m.counts.weeds.toLocaleString() + " weeds · " +
+      m.counts.insects.toLocaleString() + " insects · " +
+      m.counts.diseases.toLocaleString() + " diseases · PubCRIS " + m.built;
   });
 }
 
 function buildSciIndex(){
   SCI = Object.create(null);
   GENUS = Object.create(null);
-  for(var i = 0; i < DATA.weeds.length; i++){
-    var names = DATA.weeds[i][3] || [];
+  for(var i = 0; i < DATA.targets.length; i++){
+    var names = DATA.targets[i][3] || [];
     for(var j = 0; j < names.length; j++){
       var n = names[j];
       (SCI[n] || (SCI[n] = [])).push(i);
@@ -342,6 +358,29 @@ function needDetail(){
     getJSON("./data/detail.json"),
     getJSON("./data/hosts.json")
   ]).then(function(r){ DETAIL = r[0].detail; HOSTS = r[1].hosts; });
+}
+
+/* host -> everything registered on it, whatever the target. Answers
+   "I'm standing in a macadamia block, what can I use here". */
+var BYHOST = null;
+function needByHost(){
+  if(BYHOST) return Promise.resolve();
+  return Promise.all([
+    getJSON("./data/byhost.json"),
+    HOSTS ? Promise.resolve({hosts: HOSTS}) : getJSON("./data/hosts.json")
+  ]).then(function(r){ BYHOST = r[0].byhost; HOSTS = r[1].hosts; });
+}
+
+/* the three kinds of thing you can be trying to kill */
+var KINDS = [
+  {id: "weed",    label: "Weeds"},
+  {id: "insect",  label: "Insects & mites"},
+  {id: "disease", label: "Diseases"},
+  {id: "growth",  label: "Crop growth"}
+];
+function kindLabel(k){
+  for(var i = 0; i < KINDS.length; i++) if(KINDS[i].id === k) return KINDS[i].label;
+  return k;
 }
 
 /* products registered for a weed, optionally narrowed to a situation group */
@@ -364,7 +403,7 @@ function productsFor(weedIdx, groupIdx){
    forward index on first use — about 800k steps, a few hundred milliseconds,
    which is cheaper than shipping a second index. */
 var REVERSE = null;
-function weedsForProduct(pi){
+function targetsForProduct(pi){
   if(!REVERSE){
     REVERSE = Object.create(null);
     for(var w in DATA.idx){
@@ -426,12 +465,13 @@ function activeKey(p){
 }
 
 /* ─────────── search ─────────── */
-function searchWeeds(q){
+function searchTargets(q, kind){
   q = q.trim().toLowerCase();
   if(q.length < 2) return [];
   var terms = q.split(/\s+/), out = [];
-  for(var i = 0; i < DATA.weeds.length; i++){
-    var w = DATA.weeds[i];
+  for(var i = 0; i < DATA.targets.length; i++){
+    var w = DATA.targets[i];
+    if(kind && w[4] !== kind) continue;
     var hay = (w[1] + " " + (w[2] || []).join(" ") + " " + (w[3] || []).join(" ")).toLowerCase();
     var ok = true, score = 0;
     for(var t = 0; t < terms.length; t++){
@@ -483,7 +523,8 @@ function render(){
   app.innerHTML = "";
   if(!DATA){ app.appendChild(el("div", "loading", "Loading…")); return; }
   var f = {home: vHome, weed: vWeed, product: vProduct, identify: vIdentify,
-           settings: vSettings, prodsearch: vProdSearch}[route.name] || vHome;
+           settings: vSettings, prodsearch: vProdSearch,
+           crop: vCrop, crophost: vCropHost}[route.name] || vHome;
   mastTitle.textContent = "Weed ID";
   f(route.arg);
 }
@@ -525,9 +566,33 @@ function safetyNote(){
 function vHome(){
   var s = el("section");
 
-  var sb = searchBox("Search a weed — e.g. giant rats tail");
+  var sb = searchBox("Search a weed, insect or disease");
   var inp = sb.input;
   s.appendChild(sb.box);
+
+  /* narrow the search to one kind of problem */
+  var state = {kind: null};
+  var kindChips = el("div", "chips");
+  function drawKindChips(){
+    kindChips.innerHTML = "";
+    var all = el("button", "chip");
+    all.type = "button";
+    all.textContent = "Everything";
+    all.setAttribute("aria-pressed", state.kind === null ? "true" : "false");
+    all.onclick = function(){ state.kind = null; drawKindChips(); runSearch(); };
+    kindChips.appendChild(all);
+    KINDS.forEach(function(k){
+      if(k.id === "growth") return;           /* not something you go looking for */
+      var c = el("button", "chip");
+      c.type = "button";
+      c.textContent = k.label;
+      c.setAttribute("aria-pressed", state.kind === k.id ? "true" : "false");
+      c.onclick = function(){ state.kind = k.id; drawKindChips(); runSearch(); };
+      kindChips.appendChild(c);
+    });
+  }
+  drawKindChips();
+  s.appendChild(kindChips);
 
   var results = el("div", "panel");
   results.hidden = true;
@@ -545,12 +610,18 @@ function vHome(){
   prodBtn.onclick = function(){ go("prodsearch"); };
   s.appendChild(prodBtn);
 
-  var recent = lsJson(LS_RECENT, []).filter(function(i){ return DATA.weeds[i]; });
+  var cropBtn = el("button", "btn ghost");
+  cropBtn.type = "button";
+  cropBtn.innerHTML = "Browse by crop or situation<span class='btn-sub'>what can I use in here?</span>";
+  cropBtn.onclick = function(){ go("crop"); };
+  s.appendChild(cropBtn);
+
+  var recent = lsJson(LS_RECENT, []).filter(function(i){ return DATA.targets[i]; });
   if(recent.length){
     s.appendChild(el("h2", "sec", "Recent"));
     var rp = el("div", "panel");
     var ul = el("ul", "list");
-    recent.forEach(function(i){ ul.appendChild(weedRow(i)); });
+    recent.forEach(function(i){ ul.appendChild(targetRow(i)); });
     rp.appendChild(ul);
     s.appendChild(rp);
   } else {
@@ -559,31 +630,35 @@ function vHome(){
       + "Pl@ntNet key — set that up once under Setup."));
   }
 
+  function runSearch(){
+    var q = inp.value;
+    results.innerHTML = "";
+    if(q.trim().length < 2){ results.hidden = true; return; }
+    var hits = searchTargets(q, state.kind);
+    results.hidden = false;
+    if(!hits.length){
+      results.appendChild(el("div", "empty",
+        "Nothing matching “" + q + "”" + (state.kind ? " under " + kindLabel(state.kind).toLowerCase() : "")
+        + " in the APVMA list."));
+      return;
+    }
+    var ul = el("ul", "list");
+    hits.forEach(function(i){ ul.appendChild(targetRow(i)); });
+    results.appendChild(ul);
+  }
+
   var timer = null;
   inp.oninput = function(){
     clearTimeout(timer);
-    timer = setTimeout(function(){
-      var q = inp.value;
-      results.innerHTML = "";
-      if(q.trim().length < 2){ results.hidden = true; return; }
-      var hits = searchWeeds(q);
-      results.hidden = false;
-      if(!hits.length){
-        results.appendChild(el("div", "empty", "No weed matching “" + q + "” in the APVMA list."));
-        return;
-      }
-      var ul = el("ul", "list");
-      hits.forEach(function(i){ ul.appendChild(weedRow(i)); });
-      results.appendChild(ul);
-    }, 110);
+    timer = setTimeout(runSearch, 110);
   };
 
   app.appendChild(s);
   inp.focus({preventScroll: true});
 }
 
-function weedRow(i){
-  var w = DATA.weeds[i];
+function targetRow(i){
+  var w = DATA.targets[i];
   var li = el("li");
   var b = el("button", "item");
   b.type = "button";
@@ -591,6 +666,9 @@ function weedRow(i){
   var left = el("div");
   left.appendChild(el("div", "item-name", w[1]));
   if(w[3] && w[3].length) left.appendChild(el("div", "item-sci", w[3].slice(0, 2).map(sciName).join(", ")));
+  var km = el("div", "item-meta");
+  km.appendChild(el("span", "tag kind-" + w[4], kindLabel(w[4])));
+  left.appendChild(km);
   row.appendChild(left);
   var n = productsFor(i).length;
   if(n) row.appendChild(el("span", "count", n));
@@ -602,7 +680,7 @@ function weedRow(i){
 
 /* ─────────── weed ─────────── */
 function vWeed(i){
-  var w = DATA.weeds[i];
+  var w = DATA.targets[i];
   if(!w){ go("home"); return; }
   pushRecent(i);
   mastTitle.textContent = w[1];
@@ -613,6 +691,9 @@ function vWeed(i){
   var hero = el("div", "panel");
   var h = el("div", "hero");
   h.appendChild(el("h1", null, w[1]));
+  var kb = el("div", "item-meta");
+  kb.appendChild(el("span", "tag kind-" + w[4], kindLabel(w[4])));
+  h.appendChild(kb);
   if(w[3] && w[3].length) h.appendChild(el("p", "sci", w[3].map(sciName).join(" · ")));
   if(w[2] && w[2].length) h.appendChild(el("p", "also", "Also listed as: " + w[2].join(" · ")));
   hero.appendChild(h);
@@ -696,6 +777,7 @@ function productRow(pi, weedIdx){
   if(p[3]) meta.appendChild(el("span", null, p[3]));
   left.appendChild(meta);
   var tags = el("div", "item-meta");
+  if(p[7]) tags.appendChild(el("span", "tag type-" + (p[8] || "pest"), p[7]));
   if((p[5] || []).indexOf("QLD") >= 0) tags.appendChild(el("span", "tag qld", "QLD"));
   if(isExpired(p[6])) tags.appendChild(el("span", "tag expired", "Registration lapsed"));
   if(tags.childNodes.length) left.appendChild(tags);
@@ -755,25 +837,25 @@ function vProduct(arg){
 
   if(weedIdx == null){
     /* opened from a product search — show what this drum is actually for */
-    s.appendChild(el("h2", "sec", "Registered for these weeds"));
+    s.appendChild(el("h2", "sec", "Registered for these targets"));
     var wbox = el("div", "panel");
-    var weeds = weedsForProduct(pi);
+    var weeds = targetsForProduct(pi);
     if(!weeds.length){
-      wbox.appendChild(el("div", "empty", "No weeds listed against this product in PubCRIS."));
+      wbox.appendChild(el("div", "empty", "Nothing listed against this product in PubCRIS."));
     } else {
       var wul = el("ul", "list");
-      weeds.slice(0, 250).forEach(function(wi){ wul.appendChild(weedRow(wi)); });
+      weeds.slice(0, 250).forEach(function(wi){ wul.appendChild(targetRow(wi)); });
       wbox.appendChild(wul);
       if(weeds.length > 250){
         wbox.appendChild(el("div", "nomatch",
-          "Showing 250 of " + weeds.length + ". Search the weed by name to check this one directly."));
+          "Showing 250 of " + weeds.length + ". Search by name to check a specific one."));
       }
     }
     s.appendChild(wbox);
   }
 
   if(weedIdx != null){
-    s.appendChild(el("h2", "sec", "Registered for this weed in"));
+    s.appendChild(el("h2", "sec", "Registered for this target in"));
     var box = el("div", "panel");
     box.appendChild(el("div", "loading", "Loading situations…"));
     s.appendChild(box);
@@ -797,6 +879,101 @@ function vProduct(arg){
     });
   }
 
+  app.appendChild(s);
+}
+
+/* ─────────── browse by crop or situation ─────────── */
+function vCrop(){
+  mastTitle.textContent = "By situation";
+  var s = el("section");
+  s.appendChild(backBtn("Back", "home"));
+
+  var sb = searchBox("Crop or situation — e.g. macadamia, pasture");
+  var inp = sb.input;
+  s.appendChild(sb.box);
+  s.appendChild(el("p", "hint",
+    "Everything registered for use in that situation, whatever it targets. "
+    + "Useful when you know where you are standing but not yet what the problem is."));
+
+  var res = el("div", "panel");
+  s.appendChild(res);
+  app.appendChild(s);
+
+  needByHost().then(function(){
+    var timer = null;
+    inp.oninput = function(){
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        var q = inp.value.trim().toLowerCase();
+        res.innerHTML = "";
+        if(q.length < 2) return;
+        var hits = [];
+        for(var i = 0; i < HOSTS.length; i++){
+          if(!BYHOST[String(i)]) continue;             /* nothing registered here */
+          var at = HOSTS[i].toLowerCase().indexOf(q);
+          if(at >= 0) hits.push({i: i, s: at});
+        }
+        hits.sort(function(a, b){ return a.s - b.s || HOSTS[a.i].length - HOSTS[b.i].length; });
+        if(!hits.length){ res.appendChild(el("div", "empty", "No situation by that name.")); return; }
+        var ul = el("ul", "list");
+        hits.slice(0, 50).forEach(function(h){
+          var li = el("li");
+          var b = el("button", "item");
+          b.type = "button";
+          var row = el("div", "item-row");
+          var left = el("div");
+          left.appendChild(el("div", "item-name", HOSTS[h.i]));
+          row.appendChild(left);
+          row.appendChild(el("span", "count", unpack(BYHOST[String(h.i)]).length));
+          b.appendChild(row);
+          b.onclick = function(){ go("crophost", h.i); };
+          li.appendChild(b);
+          ul.appendChild(li);
+        });
+        res.appendChild(ul);
+      }, 130);
+    };
+    inp.focus({preventScroll: true});
+  }).catch(function(){
+    res.appendChild(el("div", "empty",
+      "This needs a connection the first time. It is cached after that."));
+  });
+}
+
+function vCropHost(hi){
+  var s = el("section");
+  s.appendChild(backBtn("Back", "crop"));
+  if(!HOSTS || !BYHOST){ go("crop"); return; }
+  mastTitle.textContent = HOSTS[hi];
+
+  var hero = el("div", "panel");
+  var h = el("div", "hero");
+  h.appendChild(el("h1", null, HOSTS[hi]));
+  h.appendChild(el("p", "also", "Everything registered for use here, whatever it targets."));
+  hero.appendChild(h);
+  s.appendChild(hero);
+  s.appendChild(safetyNote());
+
+  var ids = unpack(BYHOST[String(hi)]);
+  /* group by what sort of product it is, not by active — in this view the
+     question is "what kind of thing can I use", not "which mode of action" */
+  var buckets = Object.create(null);
+  ids.forEach(function(pi){
+    var k = DATA.products[pi][7] || "Other";
+    (buckets[k] || (buckets[k] = [])).push(pi);
+  });
+  var panel = el("div", "panel");
+  var ul = el("ul", "list");
+  Object.keys(buckets).sort(function(a, b){
+    return buckets[b].length - buckets[a].length || a.localeCompare(b);
+  }).forEach(function(k){
+    ul.appendChild(el("li", "grp-head", k + "  ·  " + buckets[k].length));
+    buckets[k].sort(function(a, b){
+      return DATA.products[a][1].localeCompare(DATA.products[b][1]);
+    }).forEach(function(pi){ ul.appendChild(productRow(pi, null)); });
+  });
+  panel.appendChild(ul);
+  s.appendChild(panel);
   app.appendChild(s);
 }
 
@@ -952,7 +1129,7 @@ function matchWeeds(res){
   if(g && GENUS[g]) return {how: "genus", ids: GENUS[g].slice()};
   var commons = (res.species && res.species.commonNames) || [];
   for(var i = 0; i < commons.length; i++){
-    var hits = searchWeeds(commons[i]);
+    var hits = searchTargets(commons[i]);
     if(hits.length) return {how: "common", ids: hits.slice(0, 6), via: commons[i]};
   }
   return {how: "none", ids: []};
@@ -992,7 +1169,7 @@ function candidates(results){
     body.appendChild(el("div", "item-sci", sci));
 
     var note;
-    if(m.how === "exact")      note = "Matches " + DATA.weeds[m.ids[0]][1];
+    if(m.how === "exact")      note = "Matches " + DATA.targets[m.ids[0]][1];
     else if(m.how === "genus") note = "Genus match — " + m.ids.length + " related entr" + (m.ids.length === 1 ? "y" : "ies");
     else if(m.how === "common")note = "Matched on the name “" + m.via + "” — check it";
     else                       note = "Not in the APVMA weed list";
@@ -1030,7 +1207,7 @@ function showChoices(panel, m, sci){
   var box = el("div");
   box.appendChild(el("div", "grp-head", "APVMA entries for " + sci));
   var ul = el("ul", "list");
-  m.ids.slice(0, 12).forEach(function(i){ ul.appendChild(weedRow(i)); });
+  m.ids.slice(0, 12).forEach(function(i){ ul.appendChild(targetRow(i)); });
   box.appendChild(ul);
   panel.appendChild(box);
   box.scrollIntoView({behavior: "smooth", block: "nearest"});
