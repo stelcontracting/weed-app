@@ -76,10 +76,14 @@ function unq(s){ sub(/^"/,"",s); sub(/"$/,"",s); gsub(/""/,"\"",s); return s }
 function trim(s){ gsub(/^[ \t\r\n]+/,"",s); gsub(/[ \t\r\n]+$/,"",s); return s }
 function clean(s){ sub(/\r$/,"",s); return trim(unq(s)) }
 function jesc(s){ gsub(/\\/,"\\\\",s); gsub(/"/,"\\\"",s); gsub(/[\r\n\t]/," ",s); return s }
-function title(s,   i,n,w,o,t,b){ n=split(tolower(s),w," "); o="";
+function title(s,   i,n,w,o,t,b,c,pp){ n=split(tolower(s),w," "); o="";
   for(i=1;i<=n;i++){ t=w[i]; b=t; gsub(/[^a-z0-9]/,"",b)
+    c=t; gsub(/[^a-z0-9,.-]/,"",c)
     # formulation and pack codes read as codes, not words: WG, EC, SC ...
-    if (b ~ /^(wg|df|sc|ec|wp|sl|sg|me|od|cs|ew|zc|gr|xl|ds|ws|ulv|rtu|ai)$/) t = toupper(t)
+    if (b ~ /^(wg|df|sc|ec|wp|sl|sg|me|od|cs|ew|zc|gr|xl|ds|ws|ulv|rtu|ai|lv|ib)$/) t = toupper(t)
+    # a chemical name inside a product name is still a chemical name: 2,4-D
+    else if (c ~ /^[0-9][0-9,]*-[a-z]+$/) { split(c,pp,"-"); if (length(pp[2])<=4) t = toupper(t)
+      else t = toupper(substr(t,1,1)) substr(t,2) }
     else t = toupper(substr(t,1,1)) substr(t,2)
     o = o (i>1?" ":"") t }
   # PubCRIS writes "STUBBLE,PRIOR TO" with no space. Only add one where a letter
