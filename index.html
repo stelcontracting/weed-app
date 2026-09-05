@@ -120,6 +120,17 @@ input::placeholder{color:var(--ink-faint)}
 .btn-sub{display:block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;
   text-transform:uppercase;opacity:.8;font-weight:400;margin-top:3px}
 
+/* the two home buttons: thumb-sized, readable at arms length in the sun */
+.btn.huge{padding:26px 18px;font-size:20px;line-height:1.15}
+.btn.huge .huge-t{display:block;font-size:26px;font-weight:700;letter-spacing:.01em;margin-top:6px}
+.btn.huge .btn-sub{font-size:11.5px;margin-top:7px}
+.more-toggle{
+  appearance:none;display:block;width:100%;background:none;border:0;cursor:pointer;
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-faint);padding:14px 8px;
+}
+.more-toggle:active{color:var(--ink)}
+
 /* ─────────── lists ─────────── */
 .list{list-style:none;margin:0;padding:0}
 .item{
@@ -174,6 +185,16 @@ input::placeholder{color:var(--ink-faint)}
 .grp-head{padding:12px 16px 6px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
   text-transform:uppercase;color:var(--accent);background:var(--surface);border-top:1px solid var(--rule)}
 .list .grp-head:first-child{border-top:0}
+
+/* Apparent leads; every other brand sits behind the reveal button */
+.brand-head{padding:13px 16px;font-family:"Archivo Narrow","Archivo",sans-serif;font-weight:700;
+  font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);
+  background:var(--accent);border-radius:var(--radius) var(--radius) 0 0}
+.brand-none{padding:14px 16px;font-size:14.5px;line-height:1.5;color:var(--ink);
+  background:var(--warn-soft);border-left:3px solid var(--warn-edge);
+  border-radius:var(--radius) var(--radius) 0 0}
+.brand-none b{color:var(--warn)}
+.btn.reveal{border-radius:0;border-left:0;border-right:0;border-bottom:0;font-size:15px;padding:14px}
 .tag{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;
   border:1px solid var(--rule-hard);border-radius:2px;padding:1px 5px;color:var(--ink-faint)}
 .tag.qld{color:var(--accent);border-color:var(--accent-edge);background:var(--accent-soft)}
@@ -269,6 +290,7 @@ var GENUS = null;      /* genus -> [weed idx] */
 
 var LS_KEY = "stel-weed-key";
 var LS_PROJ = "stel-weed-project";
+var PROJ_DEFAULT = "k-australia";   /* Pl@ntNet Australian flora: 5,167 species that actually grow here */
 var LS_THEME = "stel-weed-theme";
 var LS_RECENT = "stel-weed-recent";
 var LS_MISS = "stel-weed-misses";
@@ -516,8 +538,10 @@ function pushRecent(weedIdx){
 
 /* ═══════════════════════════ screens ═══════════════════════════ */
 var route = {name: "home"};
+var lastList = "home";   /* where Back from a weed should land */
 
 function go(name, arg){
+  if(name === "home" || name === "search" || name === "identify") lastList = name;
   route = {name: name, arg: arg};
   window.scrollTo(0, 0);
   render();
@@ -526,7 +550,7 @@ function go(name, arg){
 function render(){
   app.innerHTML = "";
   if(!DATA){ app.appendChild(el("div", "loading", "Loading…")); return; }
-  var f = {home: vHome, weed: vWeed, product: vProduct, identify: vIdentify,
+  var f = {home: vHome, search: vSearch, weed: vWeed, product: vProduct, identify: vIdentify,
            settings: vSettings, prodsearch: vProdSearch,
            crop: vCrop, crophost: vCropHost}[route.name] || vHome;
   mastTitle.textContent = "Weed ID";
@@ -567,85 +591,111 @@ function safetyNote(){
 }
 
 /* ─────────── home ─────────── */
+/* Two thumb-sized buttons and nothing else. Everything that is not "what is
+   this plant" or "what kills it" lives behind More, because in a paddock with
+   gloves on there should be one obvious thing to press. */
 function vHome(){
   var s = el("section");
 
-  var sb = searchBox("Search a weed, insect or disease");
-  var inp = sb.input;
-  s.appendChild(sb.box);
-
-  /* narrow the search to one kind of problem */
-  var state = {kind: null};
-  var kindChips = el("div", "chips");
-  function drawKindChips(){
-    kindChips.innerHTML = "";
-    var all = el("button", "chip");
-    all.type = "button";
-    all.textContent = "Everything";
-    all.setAttribute("aria-pressed", state.kind === null ? "true" : "false");
-    all.onclick = function(){ state.kind = null; drawKindChips(); runSearch(); };
-    kindChips.appendChild(all);
-    KINDS.forEach(function(k){
-      if(k.id === "growth") return;           /* not something you go looking for */
-      var c = el("button", "chip");
-      c.type = "button";
-      c.textContent = k.label;
-      c.setAttribute("aria-pressed", state.kind === k.id ? "true" : "false");
-      c.onclick = function(){ state.kind = k.id; drawKindChips(); runSearch(); };
-      kindChips.appendChild(c);
-    });
-  }
-  drawKindChips();
-  s.appendChild(kindChips);
-
-  var results = el("div", "panel");
-  results.hidden = true;
-  s.appendChild(results);
-
-  var idBtn = el("button", "btn");
+  var idBtn = el("button", "btn huge");
   idBtn.type = "button";
   idBtn.innerHTML = ls(LS_KEY, "")
-    ? "📷 Identify from photo<span class='btn-sub'>needs signal</span>"
-    : "📷 Identify from photo<span class='btn-sub'>needs a free key first — tap to set up</span>";
+    ? "📷<span class='huge-t'>Take a photo</span>"
+      + "<span class='btn-sub'>needs signal</span>"
+    : "📷<span class='huge-t'>Take a photo</span>"
+      + "<span class='btn-sub'>tap to set up first</span>";
+  idBtn.setAttribute("aria-label", "Take a photo to identify a plant");
   idBtn.onclick = function(){ go("identify"); };
   s.appendChild(idBtn);
+
+  var findBtn = el("button", "btn huge ghost");
+  findBtn.type = "button";
+  findBtn.innerHTML = "🔍<span class='huge-t'>Type a name</span>"
+    + "<span class='btn-sub'>works with no signal</span>";
+  findBtn.setAttribute("aria-label", "Type a name to search");
+  findBtn.onclick = function(){ go("search"); };
+  s.appendChild(findBtn);
+
+  var recent = lsJson(LS_RECENT, []).filter(function(i){ return DATA.targets[i]; });
+  if(recent.length){
+    s.appendChild(el("h2", "sec", "Last looked up"));
+    var rp = el("div", "panel");
+    var ul = el("ul", "list");
+    recent.slice(0, 4).forEach(function(i){ ul.appendChild(targetRow(i)); });
+    rp.appendChild(ul);
+    s.appendChild(rp);
+  }
+
+  /* the two lookups that are not the main job, kept but out of the way */
+  var moreBox = el("div");
+  moreBox.hidden = true;
 
   var prodBtn = el("button", "btn ghost");
   prodBtn.type = "button";
   prodBtn.innerHTML = "Look up a product<span class='btn-sub'>what is this drum for?</span>";
   prodBtn.onclick = function(){ go("prodsearch"); };
-  s.appendChild(prodBtn);
+  moreBox.appendChild(prodBtn);
 
   var cropBtn = el("button", "btn ghost");
   cropBtn.type = "button";
   cropBtn.innerHTML = "Browse by crop or situation<span class='btn-sub'>what can I use in here?</span>";
   cropBtn.onclick = function(){ go("crop"); };
-  s.appendChild(cropBtn);
+  moreBox.appendChild(cropBtn);
+
+  var more = el("button", "more-toggle");
+  more.type = "button";
+  more.textContent = "More";
+  more.onclick = function(){
+    moreBox.hidden = !moreBox.hidden;
+    more.textContent = moreBox.hidden ? "More" : "Less";
+  };
+  s.appendChild(more);
+  s.appendChild(moreBox);
+
+  app.appendChild(s);
+}
+
+/* ─────────── search by name ─────────── */
+/* One box, one job. The kind chips that used to sit here are gone: typing a
+   name is already specific, and every result row carries its own kind tag. */
+function vSearch(){
+  var s = el("section");
+  s.appendChild(backBtn("Back", "home"));
+
+  var sb = searchBox("Weed, insect or disease");
+  var inp = sb.input;
+  s.appendChild(sb.box);
+
+  var results = el("div", "panel");
+  results.hidden = true;
+  s.appendChild(results);
 
   var recent = lsJson(LS_RECENT, []).filter(function(i){ return DATA.targets[i]; });
+  var recentPanel = null;
   if(recent.length){
-    s.appendChild(el("h2", "sec", "Recent"));
+    recentPanel = el("div");
+    recentPanel.appendChild(el("h2", "sec", "Last looked up"));
     var rp = el("div", "panel");
-    var ul = el("ul", "list");
-    recent.forEach(function(i){ ul.appendChild(targetRow(i)); });
-    rp.appendChild(ul);
-    s.appendChild(rp);
-  } else {
-    s.appendChild(el("p", "hint",
-      "Search works with no signal. Photo identification needs a connection and a free "
-      + "Pl@ntNet key — set that up once under Setup."));
+    var rul = el("ul", "list");
+    recent.forEach(function(i){ rul.appendChild(targetRow(i)); });
+    rp.appendChild(rul);
+    recentPanel.appendChild(rp);
+    s.appendChild(recentPanel);
   }
 
   function runSearch(){
     var q = inp.value;
     results.innerHTML = "";
-    if(q.trim().length < 2){ results.hidden = true; return; }
-    var hits = searchTargets(q, state.kind);
+    if(q.trim().length < 2){
+      results.hidden = true;
+      if(recentPanel) recentPanel.hidden = false;
+      return;
+    }
+    if(recentPanel) recentPanel.hidden = true;
+    var hits = searchTargets(q, null);
     results.hidden = false;
     if(!hits.length){
-      results.appendChild(el("div", "empty",
-        "Nothing matching “" + q + "”" + (state.kind ? " under " + kindLabel(state.kind).toLowerCase() : "")
-        + " in the APVMA list."));
+      results.appendChild(el("div", "empty", "Nothing matching “" + q + "” in the APVMA list."));
       return;
     }
     var ul = el("ul", "list");
@@ -654,10 +704,7 @@ function vHome(){
   }
 
   var timer = null;
-  inp.oninput = function(){
-    clearTimeout(timer);
-    timer = setTimeout(runSearch, 110);
-  };
+  inp.oninput = function(){ clearTimeout(timer); timer = setTimeout(runSearch, 110); };
 
   app.appendChild(s);
   inp.focus({preventScroll: true});
@@ -692,7 +739,7 @@ function vWeed(i){
   mastTitle.textContent = w[1];
 
   var s = el("section");
-  s.appendChild(backBtn("Back", "home"));
+  s.appendChild(backBtn("Back", lastList));
 
   var hero = el("div", "panel");
   var h = el("div", "hero");
@@ -745,13 +792,15 @@ function vWeed(i){
   app.appendChild(s);
 }
 
+/* Apparent is the brand Stuart buys, so it leads and every other brand sits
+   behind one tap. Apparent is a Titan Ag brand, not a registrant, so the only
+   reliable marker in PubCRIS is the product name. All 131 start with "Apparent ",
+   and nothing else in the dataset has the word anywhere in its name. */
+function isApparent(p){ return /^apparent\b/i.test(p[1] || ""); }
+
 /* products grouped by active constituent, so modes of action can be rotated */
-function productList(ids, weedIdx){
+function groupedList(ids, weedIdx){
   var ul = el("ul", "list");
-  if(!ids.length){
-    ul.appendChild(el("li", "empty", "Nothing registered for this weed in that situation."));
-    return ul;
-  }
   var buckets = Object.create(null);
   ids.forEach(function(pi){
     var k = activeKey(DATA.products[pi]);
@@ -761,13 +810,58 @@ function productList(ids, weedIdx){
     return buckets[b].length - buckets[a].length || a.localeCompare(b);
   });
   keys.forEach(function(k){
-    var hd = el("li", "grp-head", k + "  ·  " + buckets[k].length);
-    ul.appendChild(hd);
+    ul.appendChild(el("li", "grp-head", k + "  ·  " + buckets[k].length));
     buckets[k].sort(function(a, b){
       return DATA.products[a][1].localeCompare(DATA.products[b][1]);
     }).forEach(function(pi){ ul.appendChild(productRow(pi, weedIdx)); });
   });
   return ul;
+}
+
+/* Apparent first, everything else one tap away. Apparent covers 1,103 of the
+   2,008 weeds, so "no Apparent product" is a normal answer, not a fault. It has
+   to say so out loud: a blank screen would read as "nothing is registered". */
+function productList(ids, weedIdx){
+  var wrap = el("div");
+
+  if(!ids.length){
+    var u0 = el("ul", "list");
+    u0.appendChild(el("li", "empty", "Nothing registered for this weed in that situation."));
+    wrap.appendChild(u0);
+    return wrap;
+  }
+
+  var mine = [], rest = [];
+  ids.forEach(function(pi){ (isApparent(DATA.products[pi]) ? mine : rest).push(pi); });
+
+  if(mine.length){
+    wrap.appendChild(el("div", "brand-head", "Apparent  ·  " + mine.length));
+    wrap.appendChild(groupedList(mine, weedIdx));
+  } else {
+    var none = el("div", "brand-none");
+    none.innerHTML = "<b>No Apparent product for this one.</b> Below is every other "
+      + "brand registered for it.";
+    wrap.appendChild(none);
+  }
+
+  if(!rest.length) return wrap;
+
+  if(!mine.length){ wrap.appendChild(groupedList(rest, weedIdx)); return wrap; }
+
+  var label = rest.length + " other brand" + (rest.length === 1 ? "" : "s");
+  var box = el("div");
+  box.hidden = true;
+  box.appendChild(groupedList(rest, weedIdx));
+  var more = el("button", "btn ghost reveal");
+  more.type = "button";
+  more.textContent = "Show " + label;
+  more.onclick = function(){
+    box.hidden = !box.hidden;
+    more.textContent = (box.hidden ? "Show " : "Hide ") + label;
+  };
+  wrap.appendChild(more);
+  wrap.appendChild(box);
+  return wrap;
 }
 
 function productRow(pi, weedIdx){
@@ -1128,7 +1222,7 @@ function vIdentify(){
 }
 
 function identify(fileBlob, organ, key){
-  var proj = ls(LS_PROJ, "all");
+  var proj = ls(LS_PROJ, PROJ_DEFAULT);
   var fd = new FormData();
   fd.append("images", fileBlob);
   fd.append("organs", organ);
@@ -1262,15 +1356,14 @@ function vSettings(){
   var f2 = el("div", "field");
   f2.appendChild(el("label", null, "Flora"));
   var proj = el("select");
-  [["all", "World flora (all)"], ["k-world-flora", "World flora (k)"],
-   ["weurope", "Western Europe"], ["useful", "Useful plants"]].forEach(function(o){
+  [["k-australia", "Australia only (5,167 plants)"], ["all", "Everywhere (81,000 plants)"]].forEach(function(o){
     var op = el("option", null, o[1]);
     op.value = o[0];
     proj.appendChild(op);
   });
-  proj.value = ls(LS_PROJ, "all");
+  proj.value = ls(LS_PROJ, PROJ_DEFAULT);
   f2.appendChild(proj);
-  f2.appendChild(el("p", "hint", "World flora is the right choice in Australia."));
+  f2.appendChild(el("p", "hint", "Australia only is the right choice. It ignores plants that do not grow here, so it guesses wrong far less often. Only switch to everywhere if something will not identify."));
   p1.appendChild(f2);
   s.appendChild(p1);
 
@@ -1367,6 +1460,18 @@ function applyTheme(){
 }
 
 /* ─────────── boot ─────────── */
+
+/* One-time move to the Australian flora. Phones that saved a world-wide flora
+   before 2026-09-06 still hold it, so the new default alone would never reach
+   them. Only the old world-wide values are moved; a deliberate choice is left. */
+(function migrateFlora(){
+  var LS_DONE = "stel-weed-flora-au";
+  if(ls(LS_DONE, "")) return;
+  var cur = ls(LS_PROJ, "");
+  if(cur === "" || cur === "all" || cur === "k-world-flora"){ lsSet(LS_PROJ, PROJ_DEFAULT); }
+  lsSet(LS_DONE, "1");
+})();
+
 document.getElementById("btnSettings").onclick = function(){ go("settings"); };
 applyTheme();
 

@@ -10,12 +10,20 @@ Live at **https://stelcontracting.github.io/weed-app/**
 ## What it does
 
 - **Identify from a photo** — Pl@ntNet returns candidate species with confidence
-  scores; you confirm which one is right. It never picks silently.
+  scores; you confirm which one is right. It never picks silently. It only looks at
+  the **Australian flora** (5,167 plants that actually grow here) rather than the
+  world list of 81,000, so it guesses wrong far less often.
 - **Search by name** — weeds, insects, mites or diseases, filtered by kind.
   Works fully offline. This is the part that carries the value in a paddock.
-- **See what is registered** — products for that target, narrowed to the
-  situation you are in (pasture, fenceline, roadside, forestry, non-crop…),
-  grouped by base active constituent so modes of action can be rotated.
+- **See what is registered** — **Apparent products come first**, since that is what
+  the shed is stocked with. Every other brand sits behind one tap. Products are
+  narrowed to the situation you are in (pasture, fenceline, roadside, forestry,
+  non-crop…) and grouped by base active constituent so modes of action can be
+  rotated.
+- **It says so when there is no Apparent product.** Apparent covers 1,103 of the
+  2,008 weeds. For the rest the app says plainly that there is no Apparent option
+  and shows every other registered brand straight away, because a blank screen
+  would read as "nothing is registered".
 - **Open the label** — the official APVMA approved label PDF for that product.
 - **Look up a product** — what is this drum in the shed actually for.
 - **Browse by crop or situation** — everything registered for use in a
@@ -82,9 +90,30 @@ host that does not exist, or if the delta encoding goes negative.
 When the app identifies something with no crosswalk entry, it records the name
 under Setup → "Species with no APVMA match". Those are the ones worth adding.
 
+## How the Apparent filter works
+
+Apparent is a **brand of Titan Ag, not a registrant**, so there is no company
+field in PubCRIS to filter on. The only reliable marker is the product name:
+all 131 Apparent products are named `Apparent <something>`, and nothing else in
+the dataset has the word anywhere in its name. The test is one line in
+`index.html`:
+
+```js
+function isApparent(p){ return /^apparent/i.test(p[1] || ""); }
+```
+
+That means **no data rebuild is needed** to keep the filter current. If Titan Ag
+registers a new Apparent product, the next `build-data.sh` run picks it up as an
+ordinary product and the name test finds it automatically. Do not try to filter
+on the supplier field, and do not hardcode a list of APVMA numbers.
+
+Coverage as at 2026-09-05: 1,103 of the 2,008 weeds have at least one Apparent
+product. The other 905 show the "no Apparent product" message and every other
+registered brand underneath.
+
 ## Shipping an update
 
-Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v4`), commit, push.
+Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v5`), commit, push.
 The service worker is network-first for the page, so phones pick up the change
 next time they have signal. No reinstalling.
 
