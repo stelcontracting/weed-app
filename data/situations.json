@@ -1,0 +1,24 @@
+{"v":1,"groups":[
+
+["pasture","Pasture & grazing"],
+["noncrop","Non-crop & bare ground"],
+["fenceline","Fencelines"],
+["roadside","Roads, rail & tracks"],
+["woody","Woody weeds & regrowth"],
+["forestry","Forestry & plantations"],
+["industrial","Industrial & commercial"],
+["aquatic","Water, dams & drains"],
+["treenuts","Tree nuts"],
+["orchard","Orchards & vines"],
+["sugarcane","Sugar cane"],
+["cereals","Cereals & sorghum"],
+["pulses","Pulses & oilseeds"],
+["cotton","Cotton"],
+["fallow","Fallow & pre-sowing"],
+["vegetables","Vegetables"],
+["turf","Turf, lawns & ovals"],
+["domestic","Domestic, parks & amenity"],
+["farm","Farms & general ag"],
+["method","(application method)"],
+["other","Other situations"]
+]}

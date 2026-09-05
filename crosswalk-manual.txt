@@ -1,0 +1,140 @@
+# Scientific name -> PubCRIS weed code
+#
+# Pl@ntNet returns a botanical name. PubCRIS uses common names, and only 15 of
+# its aliases are proper binomials, so this file is the bridge. build-data.sh
+# also auto-extracts binomials that PubCRIS embeds after a dash
+# ("SOFT BROME - BROMUS MOLLIS"); entries here are the hand-checked ones and
+# take priority.
+#
+# Format:  scientific name | PUBCRIS pest code
+#
+# One species may map to several codes. PubCRIS splits many weeds by growth
+# stage or level of control ("SICKLE POD", "SICKLE POD - SEEDLING", "SICKLE POD
+# - <9 LEAF STAGE"). List them all: the app unions the products behind them and
+# shows which specific entry each product is registered against.
+#
+# Every code below was checked to exist in the current PubCRIS extract. If you
+# add one, run build-data.sh and check the "crosswalk entries" count moves.
+#
+# Weighted to Central Queensland — what STEL actually gets called out to.
+
+# --- declared / high-priority woody and grass weeds -------------------------
+sporobolus pyramidalis      | ZGGR
+sporobolus natalensis       | ZGGR1
+sporobolus fertilis         | ZGGR
+sporobolus africanus        | ZGGR
+parthenium hysterophorus    | ZPARH
+parthenium hysterophorus    | ZAPAT
+lantana camara              | ZLANC
+lantana camara              | ZLANCS
+lantana montevidensis       | ZLANM
+vachellia nilotica          | ZACAN
+acacia nilotica             | ZACAN
+cryptostegia grandiflora    | ZCRYG
+cryptostegia grandiflora    | ZCRYG1
+jatropha gossypiifolia      | ZJAGT
+bryophyllum delagoense      | ZKALT
+bryophyllum tubiflorum      | ZKALT
+kalanchoe delagoensis       | ZKALT
+ziziphus mauritiana         | ZZIZM
+parkinsonia aculeata        | ZPARA
+harrisia martinii           | ZHC
+eriocereus martinii         | ZHC
+calotropis procera          | XNCHC
+cyperus aromaticus          | NAVSE
+cyperus aromaticus          | NAVSE1
+senna obtusifolia           | ZCASO
+senna obtusifolia           | ZCASO1
+senna obtusifolia           | ZCASO2
+cassia obtusifolia          | ZCASO
+themeda quadrivalvis        | ZTHEQ
+prosopis pallida            | ZPROS
+prosopis velutina           | ZPROS1
+mimosa pigra                | ZMIMQ
+mimosa diplotricha          | ZMIMX
+mimosa invisa               | ZMIMX
+vachellia farnesiana        | ZACAF
+acacia farnesiana           | ZACAF
+lycium ferocissimum         | ZLYCF
+lycium ferocissimum         | ZLYCFS
+opuntia stricta             | ZOPUS
+opuntia monacantha          | ZOPUV
+baccharis halimifolia       | ZBACH1
+baccharis halimifolia       | ZBACHS
+solanum mauritianum         | ZNICG
+ricinus communis            | ZADRG
+elephantopus mollis         | ZTOW
+
+# --- aquatic ----------------------------------------------------------------
+salvinia molesta            | ZSALM
+eichhornia crassipes        | ZEICC
+pontederia crassipes        | ZEICC
+
+# --- grasses ----------------------------------------------------------------
+chloris virgata             | ZCHLV
+chloris virgata             | ZFRG
+echinochloa colona          | ZECHD
+echinochloa colona          | ZECHD1
+echinochloa colona          | ZECHD2
+echinochloa crus-galli      | ZECH
+echinochloa crus-galli      | ZECH1
+sorghum halepense           | ZSORH
+sorghum halepense           | ZSORHR
+sorghum halepense           | ZSOR6
+megathyrsus maximus         | ZPANQ
+megathyrsus maximus         | ZPANX
+panicum maximum             | ZPANQ
+panicum maximum             | ZPAN1
+cenchrus ciliaris           | ZABU1
+cenchrus ciliaris           | ZABUF
+urochloa panicoides         | ZUROP
+urochloa panicoides         | ZUROX
+eleusine indica             | ZELEI
+eleusine indica             | ZELEX
+digitaria sanguinalis       | ZDIGG
+brachiaria subquadripara    | ZBRA8
+cynodon dactylon            | ZCYND
+cynodon dactylon            | ZCYND2
+cynodon dactylon            | ZCYND4
+vulpia myuros               | ZRTF1
+
+# --- sedges -----------------------------------------------------------------
+cyperus rotundus            | ZCYPR
+cyperus rotundus            | ZCYPR1
+cyperus rotundus            | ZCYPR2
+
+# --- broadleaf, cropping and roadside --------------------------------------
+conyza bonariensis          | ZCONB
+conyza bonariensis          | ZCON1
+conyza canadensis           | ZCONC
+conyza sumatrensis          | ZCOND
+erigeron bonariensis        | ZCONB
+erigeron canadensis         | ZCONC
+sonchus oleraceus           | ZSON4
+sonchus oleraceus           | ZSON
+sonchus oleraceus           | ZSON3
+sonchus asper               | ZSONA
+xanthium occidentale        | ZXAN2
+xanthium occidentale        | ZXANX
+xanthium strumarium         | ZXAN2
+xanthium spinosum           | ZXANS
+xanthium spinosum           | ZXANY
+heliotropium amplexicaule   | ZHELA
+tribulus terrestris         | ZTRIT
+tribulus terrestris         | ZTRIT2
+tribulus terrestris         | ZTRIX
+alternanthera pungens       | ZALTP
+alternanthera pungens       | ZALTX
+datura stramonium           | ZDAT
+datura ferox                | ZDAT2
+portulaca oleracea          | ZPORR
+portulaca oleracea          | ZPOR3
+raphanus raphanistrum       | ZRAP3
+raphanus raphanistrum       | ZRAPX
+polygonum aviculare         | ZPOLA
+polygonum aviculare         | ZPOLY
+emex australis              | ZEME
+emex australis              | ZEMEX
+sida rhombifolia            | ZSIDR
+ipomoea plebeia             | ZIPOX
+senecio vulgaris            | ZSEN2

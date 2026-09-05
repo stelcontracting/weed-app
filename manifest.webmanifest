@@ -1,0 +1,16 @@
+{
+  "name": "STEL Weed ID",
+  "short_name": "Weed ID",
+  "description": "Photograph a weed, find every herbicide registered for it in Australia, open the approved APVMA label.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F1F3EC",
+  "theme_color": "#54781A",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

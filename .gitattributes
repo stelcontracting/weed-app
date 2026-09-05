@@ -1,0 +1,10 @@
+# Keep LF endings. A CRLF shebang line makes build-data.sh unrunnable
+# ("bad interpreter"), and CRLF in the JSON just bloats the diff.
+*.sh   text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.js   text eol=lf
+*.txt  text eol=lf
+*.md   text eol=lf
+*.webmanifest text eol=lf
+*.png  binary

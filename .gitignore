@@ -1,0 +1,4 @@
+# The PubCRIS CSV cache and scratch files — ~170 MB, all re-downloadable.
+# build-data.sh keeps these in %LOCALAPPDATA%\stel-weed-build by default, but
+# ignore the old in-repo location too in case BUILD_DIR points back here.
+build/
