@@ -84,7 +84,7 @@ under Setup → "Species with no APVMA match". Those are the ones worth adding.
 
 ## Shipping an update
 
-Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v3`), commit, push.
+Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v4`), commit, push.
 The service worker is network-first for the page, so phones pick up the change
 next time they have signal. No reinstalling.
 

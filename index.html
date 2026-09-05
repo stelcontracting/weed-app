@@ -201,6 +201,10 @@ input::placeholder{color:var(--ink-faint)}
 .bar i{display:block;height:100%;background:var(--accent)}
 .nomatch{padding:14px 16px;border-top:1px solid var(--rule);font-size:13.5px;color:var(--ink-faint);line-height:1.45}
 .preview{width:100%;max-height:260px;object-fit:cover;border-radius:2px;border:1px solid var(--rule);display:block}
+/* File inputs must stay in the layout to be clickable from script — mobile
+   Safari ignores .click() on a display:none input. Hide them visually only. */
+.filepick{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0;opacity:0}
 
 /* ─────────── misc ─────────── */
 .empty{padding:28px 16px;text-align:center;color:var(--ink-faint);font-size:14px;line-height:1.5}
@@ -600,7 +604,9 @@ function vHome(){
 
   var idBtn = el("button", "btn");
   idBtn.type = "button";
-  idBtn.innerHTML = "📷 Identify from photo<span class='btn-sub'>needs signal</span>";
+  idBtn.innerHTML = ls(LS_KEY, "")
+    ? "📷 Identify from photo<span class='btn-sub'>needs signal</span>"
+    : "📷 Identify from photo<span class='btn-sub'>needs a free key first — tap to set up</span>";
   idBtn.onclick = function(){ go("identify"); };
   s.appendChild(idBtn);
 
@@ -1054,24 +1060,40 @@ function vIdentify(){
   });
   s.appendChild(chips);
 
-  var file = el("input");
-  file.type = "file";
-  file.accept = "image/*";
-  file.setAttribute("capture", "environment");
-  file.hidden = true;
-  s.appendChild(file);
+  /* Two inputs, not one. "capture" forces the camera and REMOVES the option to
+     pick an existing photo, so the roll needs its own input without it.
+     Neither may be display:none — a hidden file input ignores a programmatic
+     .click() on mobile Safari, which makes the button look broken. */
+  var cam = el("input", "filepick");
+  cam.type = "file";
+  cam.accept = "image/*";
+  cam.setAttribute("capture", "environment");
+  s.appendChild(cam);
+
+  var roll = el("input", "filepick");
+  roll.type = "file";
+  roll.accept = "image/*";
+  s.appendChild(roll);
 
   var shoot = el("button", "btn");
   shoot.type = "button";
-  shoot.innerHTML = "📷 Take a photo<span class='btn-sub'>or choose one from the roll</span>";
-  shoot.onclick = function(){ file.click(); };
+  shoot.innerHTML = "📷 Take a photo<span class='btn-sub'>opens the camera</span>";
+  shoot.onclick = function(){ cam.click(); };
   s.appendChild(shoot);
+
+  var pick = el("button", "btn ghost");
+  pick.type = "button";
+  pick.innerHTML = "Choose an existing photo<span class='btn-sub'>from the camera roll</span>";
+  pick.onclick = function(){ roll.click(); };
+  s.appendChild(pick);
 
   var out = el("div");
   s.appendChild(out);
 
-  file.onchange = function(){
-    var f = file.files && file.files[0];
+  function handlePick(input){
+    var f = input.files && input.files[0];
+    /* clear it, or picking the same photo twice fires no change event at all */
+    input.value = "";
     if(!f) return;
     out.innerHTML = "";
     var pv = el("img", "preview");
@@ -1097,7 +1119,10 @@ function vIdentify(){
       manual.onclick = function(){ go("home"); };
       out.appendChild(manual);
     });
-  };
+  }
+
+  cam.onchange  = function(){ handlePick(cam); };
+  roll.onchange = function(){ handlePick(roll); };
 
   app.appendChild(s);
 }
@@ -1258,6 +1283,30 @@ function vSettings(){
     toast("Saved");
   };
   s.appendChild(save);
+
+  /* Tells you in one tap whether the key works, the quota is gone, or the phone
+     simply has no signal — instead of all three looking like "camera broken". */
+  var testOut = el("p", "hint");
+  var test = el("button", "btn ghost");
+  test.type = "button";
+  test.textContent = "Test the key";
+  test.onclick = function(){
+    var k = keyIn.value.trim();
+    if(!k){ testOut.textContent = "Enter a key first."; return; }
+    testOut.innerHTML = "<span class='spin'></span> Checking…";
+    fetch("https://my-api.plantnet.org/v2/projects?api-key=" + encodeURIComponent(k) + "&lang=en")
+      .then(function(r){
+        if(r.status === 401) testOut.textContent = "✗ Pl@ntNet rejected that key. Check it was copied in full.";
+        else if(r.status === 429) testOut.textContent = "✗ Key is valid but today's 500 identifications are used up.";
+        else if(r.ok) testOut.textContent = "✓ Key works. Photo identification is ready.";
+        else testOut.textContent = "✗ Pl@ntNet returned " + r.status + ".";
+      })
+      .catch(function(){
+        testOut.textContent = "✗ Could not reach Pl@ntNet — no signal, or the phone is offline.";
+      });
+  };
+  s.appendChild(test);
+  s.appendChild(testOut);
 
   s.appendChild(el("h2", "sec", "Appearance"));
   var p2 = el("div", "panel");
