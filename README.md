@@ -10,9 +10,9 @@ Live at **https://stelcontracting.github.io/weed-app/**
 ## What it does
 
 - **Identify from a photo** — Pl@ntNet returns candidate species with confidence
-  scores; you confirm which one is right. It never picks silently. It only looks at
-  the **Australian flora** (5,167 plants that actually grow here) rather than the
-  world list of 81,000, so it guesses wrong far less often.
+  scores; you confirm which one is right. It never picks silently. It uses the
+  world flora, because that is the only one a free Pl@ntNet key is allowed to use
+  (see "A trap: floras are not all free" below).
 - **Search by name** — weeds, insects, mites or diseases, filtered by kind.
   Works fully offline. This is the part that carries the value in a paddock.
 - **See what is registered** — **Apparent products come first**, since that is what
@@ -90,6 +90,31 @@ host that does not exist, or if the delta encoding goes negative.
 When the app identifies something with no crosswalk entry, it records the name
 under Setup → "Species with no APVMA match". Those are the ones worth adding.
 
+## A trap: floras are not all free
+
+Pl@ntNet has regional floras, and `k-australia` (5,167 plants that grow here)
+would be a better pool to identify against than the world list of 81,000. **A
+free API key cannot use it.** The API answers **403 Forbidden**, not 401 and not
+404, so the key looks fine and only identification fails.
+
+This was shipped on 2026-09-06 and broke every photo identification for a day,
+because the old error handling threw the response body away and reported a 403
+as "Pl@ntNet found nothing it recognises in that photo". The photo was never the
+problem.
+
+What guards against it now:
+
+- The default flora is `all`, which every key can use.
+- `identify()` reads the error body and reports Pl@ntNet's own message.
+- A 403 or 404 on any flora other than `all` makes the app **retry once on `all`**,
+  save that choice so it stops wasting calls, and tell the user it switched.
+- **Setup builds the flora dropdown from `/v2/projects` using the real key**, so it
+  only ever offers floras that key can actually reach. Do not hardcode that list
+  again. Tap **Check the key** to populate it.
+
+If an Australian flora ever becomes available on the plan, Check the key will
+show it and it can be selected. Nothing needs changing in the code.
+
 ## How the Apparent filter works
 
 Apparent is a **brand of Titan Ag, not a registrant**, so there is no company
@@ -113,7 +138,7 @@ registered brand underneath.
 
 ## Shipping an update
 
-Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v5`), commit, push.
+Edit, bump the `CACHE` string in `sw.js` (currently `stel-weed-v6`), commit, push.
 The service worker is network-first for the page, so phones pick up the change
 next time they have signal. No reinstalling.
 

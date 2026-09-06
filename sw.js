@@ -4,7 +4,7 @@
    can be looked up and its product list read standing in a paddock with no
    bars. Label PDFs are not cached here: elabels.apvma.gov.au sends no CORS
    headers, so they open in the browser and the browser caches them. */
-var CACHE = "stel-weed-v5";
+var CACHE = "stel-weed-v6";
 var FILES = [
   "./",
   "./index.html",

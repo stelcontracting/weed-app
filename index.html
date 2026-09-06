@@ -290,7 +290,10 @@ var GENUS = null;      /* genus -> [weed idx] */
 
 var LS_KEY = "stel-weed-key";
 var LS_PROJ = "stel-weed-project";
-var PROJ_DEFAULT = "k-australia";   /* Pl@ntNet Australian flora: 5,167 species that actually grow here */
+var PROJ_DEFAULT = "all";   /* the only flora a free Pl@ntNet key is allowed to use.
+   k-australia is a real flora and a better one, but it is not included in the free
+   plan: the API answers 403 for it, which killed every identification on 2026-09-06.
+   Setup now lists whatever THIS key can actually reach, read from /v2/projects. */
 var LS_THEME = "stel-weed-theme";
 var LS_RECENT = "stel-weed-recent";
 var LS_MISS = "stel-weed-misses";
@@ -1199,9 +1202,16 @@ function vIdentify(){
     var busy = el("div", "loading");
     busy.innerHTML = "<span class='spin'></span> Asking Pl@ntNet…";
     out.appendChild(busy);
-    identify(f, organ.v, key).then(function(results){
+    identify(f, organ.v, key).then(function(res){
       busy.remove();
-      out.appendChild(candidates(results));
+      if(res.fellBack){
+        var sw = el("div", "brand-none");
+        sw.innerHTML = "<b>Switched back to the world flora.</b> This Pl@ntNet key is not "
+          + "allowed to use the " + res.badProj + " flora, so the app has moved to one "
+          + "that works. Nothing for you to do.";
+        out.appendChild(sw);
+      }
+      out.appendChild(candidates(res.results));
     }).catch(function(err){
       busy.remove();
       var e = el("div", "panel");
@@ -1221,20 +1231,47 @@ function vIdentify(){
   app.appendChild(s);
 }
 
-function identify(fileBlob, organ, key){
-  var proj = ls(LS_PROJ, PROJ_DEFAULT);
+function identify(fileBlob, organ, key, projOverride){
+  var proj = projOverride || ls(LS_PROJ, PROJ_DEFAULT);
   var fd = new FormData();
   fd.append("images", fileBlob);
   fd.append("organs", organ);
   var url = "https://my-api.plantnet.org/v2/identify/" + encodeURIComponent(proj)
           + "?api-key=" + encodeURIComponent(key) + "&nb-results=5&lang=en";
   return fetch(url, {method: "POST", body: fd}).then(function(r){
-    if(r.status === 401) throw new Error("Pl@ntNet rejected the key. Check it under Setup.");
-    if(r.status === 429) throw new Error("Daily Pl@ntNet limit reached (500/day). Search by name instead.");
-    if(r.status === 404) throw new Error("Pl@ntNet found nothing it recognises in that photo.");
-    if(!r.ok) throw new Error("Pl@ntNet error " + r.status + ". Search by name instead.");
-    return r.json();
-  }).then(function(j){ return j.results || []; });
+    if(r.ok) return r.json().then(function(j){
+      return {results: j.results || [], proj: proj, fellBack: false};
+    });
+    /* Read the body. Pl@ntNet puts a real reason in there, and throwing it away
+       is what let a forbidden flora look like "nothing in that photo" for a day. */
+    return r.text().then(function(body){
+      var msg = "";
+      try{ msg = String(JSON.parse(body).message || "").trim(); }catch(e){}
+      if(r.status === 401) throw new Error("Pl@ntNet rejected the key. Check it under Setup.");
+      if(r.status === 429) throw new Error("Daily Pl@ntNet limit reached (500/day). Search by name instead.");
+      /* 403 means the key is fine but this flora is not in the plan. A 404 on a
+         flora the key cannot see looks the same. Either way, drop to "all" once
+         rather than telling the user their photo was no good. */
+      if((r.status === 403 || r.status === 404) && proj !== "all"){
+        var fb = new Error("flora-unavailable");
+        fb.fallback = true;
+        throw fb;
+      }
+      if(r.status === 404){
+        throw new Error("Pl@ntNet did not recognise that photo. Try a closer shot of a "
+          + "leaf or flower." + (msg ? " (" + msg + ")" : ""));
+      }
+      throw new Error("Pl@ntNet error " + r.status + (msg ? ": " + msg : "") + ".");
+    });
+  }).catch(function(err){
+    if(!err || !err.fallback) throw err;
+    lsSet(LS_PROJ, "all");                    /* remember, so it stops costing a call */
+    return identify(fileBlob, organ, key, "all").then(function(res){
+      res.fellBack = true;
+      res.badProj = proj;
+      return res;
+    });
+  });
 }
 
 /* Map a Pl@ntNet result onto PubCRIS weeds. Exact binomial first, then genus,
@@ -1356,14 +1393,33 @@ function vSettings(){
   var f2 = el("div", "field");
   f2.appendChild(el("label", null, "Flora"));
   var proj = el("select");
-  [["k-australia", "Australia only (5,167 plants)"], ["all", "Everywhere (81,000 plants)"]].forEach(function(o){
-    var op = el("option", null, o[1]);
-    op.value = o[0];
-    proj.appendChild(op);
-  });
-  proj.value = ls(LS_PROJ, PROJ_DEFAULT);
+  /* Only "all" is guaranteed. Anything else depends on what the key's plan
+     includes, so the real list is read from the key itself by Check the key
+     below rather than guessed at here. */
+  function setFloraOptions(list){
+    proj.innerHTML = "";
+    list.forEach(function(o){
+      var op = el("option", null, o[1]);
+      op.value = o[0];
+      proj.appendChild(op);
+    });
+    var want = ls(LS_PROJ, PROJ_DEFAULT);
+    proj.value = want;
+    if(proj.value !== want){          /* saved flora is not in the list any more */
+      var op = el("option", null, want + " (not available to this key)");
+      op.value = want;
+      proj.appendChild(op);
+      proj.value = want;
+    }
+  }
+  setFloraOptions([["all", "Everywhere (world flora)"]]);
   f2.appendChild(proj);
-  f2.appendChild(el("p", "hint", "Australia only is the right choice. It ignores plants that do not grow here, so it guesses wrong far less often. Only switch to everywhere if something will not identify."));
+  var floraHint = el("p", "hint",
+    "Everywhere is the only flora a free key can use. Tap Check the key below to "
+    + "see whether this key can reach an Australian flora as well. If a flora is "
+    + "picked that the key cannot use, the app falls back to Everywhere on its own "
+    + "rather than failing.");
+  f2.appendChild(floraHint);
   p1.appendChild(f2);
   s.appendChild(p1);
 
@@ -1382,17 +1438,35 @@ function vSettings(){
   var testOut = el("p", "hint");
   var test = el("button", "btn ghost");
   test.type = "button";
-  test.textContent = "Test the key";
+  test.textContent = "Check the key";
   test.onclick = function(){
     var k = keyIn.value.trim();
     if(!k){ testOut.textContent = "Enter a key first."; return; }
     testOut.innerHTML = "<span class='spin'></span> Checking…";
     fetch("https://my-api.plantnet.org/v2/projects?api-key=" + encodeURIComponent(k) + "&lang=en")
       .then(function(r){
-        if(r.status === 401) testOut.textContent = "✗ Pl@ntNet rejected that key. Check it was copied in full.";
-        else if(r.status === 429) testOut.textContent = "✗ Key is valid but today's 500 identifications are used up.";
-        else if(r.ok) testOut.textContent = "✓ Key works. Photo identification is ready.";
-        else testOut.textContent = "✗ Pl@ntNet returned " + r.status + ".";
+        if(r.status === 401){ testOut.textContent = "✗ Pl@ntNet rejected that key. Check it was copied in full."; return; }
+        if(r.status === 429){ testOut.textContent = "✗ Key is valid but today's 500 identifications are used up."; return; }
+        if(!r.ok){ testOut.textContent = "✗ Pl@ntNet returned " + r.status + "."; return; }
+        return r.json().then(function(list){
+          /* Whatever comes back is exactly what this key is allowed to use, so the
+             dropdown is built from it instead of from a guess. A flora that is not
+             in here answers 403 at identify time, which is what broke the camera. */
+          var opts = [["all", "Everywhere (world flora)"]];
+          var au = 0;
+          (Array.isArray(list) ? list : []).forEach(function(p){
+            var id = p && (p.name || p.id);
+            if(!id || id === "all") return;
+            var title = (p.title || p.desc || id);
+            opts.push([id, title]);
+            if(/austral|queensland|new south wales|northern territory|oceania/i.test(id + " " + title)) au++;
+          });
+          setFloraOptions(opts);
+          testOut.textContent = "✓ Key works. " + opts.length + " flora"
+            + (opts.length === 1 ? "" : "s") + " available to it"
+            + (au ? ", including " + au + " Australian. Pick one above and Save."
+                  : ". None of them are Australian on this plan, so leave it on Everywhere.");
+        });
       })
       .catch(function(){
         testOut.textContent = "✗ Could not reach Pl@ntNet — no signal, or the phone is offline.";
@@ -1461,14 +1535,13 @@ function applyTheme(){
 
 /* ─────────── boot ─────────── */
 
-/* One-time move to the Australian flora. Phones that saved a world-wide flora
-   before 2026-09-06 still hold it, so the new default alone would never reach
-   them. Only the old world-wide values are moved; a deliberate choice is left. */
-(function migrateFlora(){
-  var LS_DONE = "stel-weed-flora-au";
+/* 2026-09-06: an earlier build pointed every phone at the k-australia flora.
+   A free key is not allowed to use it, so the API answered 403 and no photo
+   identified at all. Put those phones back on a flora that works. */
+(function rescueFlora(){
+  var LS_DONE = "stel-weed-flora-fix";
   if(ls(LS_DONE, "")) return;
-  var cur = ls(LS_PROJ, "");
-  if(cur === "" || cur === "all" || cur === "k-world-flora"){ lsSet(LS_PROJ, PROJ_DEFAULT); }
+  if(ls(LS_PROJ, "") === "k-australia") lsSet(LS_PROJ, "all");
   lsSet(LS_DONE, "1");
 })();
 
